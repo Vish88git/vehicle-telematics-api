@@ -23,6 +23,11 @@ const vehicleData = {
   },
 };
 
+const telemetryHistory = {
+  "KA-01-AB-1234": [],
+  "KA-01-CD-5678": [],
+};
+
 app.get("/api/health", function (req, res) {
   res.status(200).json({ status: "ok" });
 });
@@ -37,6 +42,33 @@ app.get("/api/telemetry/:vehicleId", function (req, res) {
   } else {
     res.status(404).json({ error: "Vehicle not found" });
   }
+});
+
+app.post("/api/telemetry/:vehicleId", function (req, res) {
+  const vehicleId = req.params.vehicleId;
+  const data = vehicleData[vehicleId];
+
+  if (!data) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  Object.assign(data, req.body);
+  const snapshot = {
+    timestamp: new Date().toISOString(),
+    ...data,
+  };
+  telemetryHistory[vehicleId].push(snapshot);
+  res.status(200).json(data);
+});
+
+app.get("/api/telemetry/:vehicleId/history", function (req, res) {
+  const vehicleId = req.params.vehicleId;
+  const data = vehicleData[vehicleId];
+
+  if (!data) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+  res.status(200).json(telemetryHistory[vehicleId]);
 });
 
 const PORT = 3000;
