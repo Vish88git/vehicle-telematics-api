@@ -61,14 +61,39 @@ app.post("/api/telemetry/:vehicleId", function (req, res) {
   res.status(200).json(data);
 });
 
-app.get("/api/telemetry/:vehicleId/history", function (req, res) {
+app.get("/api/telemetry/:vehicleId/stream", function (req, res) {
+  // 1. Extract vehicleId
   const vehicleId = req.params.vehicleId;
   const data = vehicleData[vehicleId];
 
+  // 2. Check if vehicle exists
   if (!data) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
-  res.status(200).json(telemetryHistory[vehicleId]);
+
+  // 3. Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  // Optional but commonly used
+  res.flushHeaders();
+
+  // 4. Send initial data immediately
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  // 5. Send updated data every 2 seconds
+  const interval = setInterval(function () {
+    const updatedData = vehicleData[vehicleId];
+
+    res.write(`data: ${JSON.stringify(updatedData)}\n\n`);
+  }, 2000);
+
+  // 6. Stop interval when client disconnects
+  req.on("close", function () {
+    clearInterval(interval);
+    res.end();
+  });
 });
 
 const PORT = 3000;
