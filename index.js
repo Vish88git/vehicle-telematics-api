@@ -82,6 +82,8 @@ const scanFaults = {
   },
 };
 
+const notifications = [];
+
 app.get("/api/health", function (req, res) {
   res.status(200).json({ status: "ok" });
 });
@@ -203,6 +205,46 @@ app.post("/api/faults/:vehicleId/scan", function (req, res) {
   faultData[vehicleId][randomCode] = newFault;
 
   res.status(201).json({ code: randomCode, ...newFault });
+});
+
+app.post("/api/notifications/critical", function (req, res) {
+  const { vehicleId, dtcCode, message } = req.body;
+
+  // Get severity from faultData if exists
+  const faults = faultData[vehicleId];
+  const fault = faults && faults[dtcCode];
+  const severity = fault ? fault.severity : 10;
+
+  const notification = {
+    id: Date.now().toString(), // Simple unique ID
+    vehicleId,
+    dtcCode,
+    message,
+    severity,
+    acknowledged: false,
+    timestamp: new Date().toISOString(),
+  };
+
+  notifications.push(notification);
+  res.status(201).json(notification);
+});
+
+app.get("/api/notifications/:vehicleId", function (req, res) {
+  const vehicleId = req.params.vehicleId;
+  const matching = notifications.filter((n) => n.vehicleId === vehicleId);
+  res.status(200).json(matching);
+});
+
+app.put("/api/notifications/:id/acknowledge", function (req, res) {
+  const id = req.params.id;
+  const notification = notifications.find((n) => n.id === id);
+
+  if (!notification) {
+    return res.status(404).json({ error: "Notification not found" });
+  }
+
+  notification.acknowledged = true;
+  res.status(200).json(notification);
 });
 
 app.get("/api/telemetry/:vehicleId/stream", function (req, res) {
