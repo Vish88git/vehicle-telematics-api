@@ -28,6 +28,33 @@ const telemetryHistory = {
   "KA-01-CD-5678": [],
 };
 
+const faultData = {
+  "KA-01-AB-1234": {
+    P0301: {
+      description: "Cylinder 1 misfire detected",
+      severity: 8,
+      resolved: false,
+    },
+    P0420: {
+      description: "Catalyst system efficiency below threshold",
+      severity: 6,
+      resolved: false,
+    },
+  },
+  "KA-01-CD-5678": {
+    P0A78: {
+      description: "Motor Electronics Coolant Temperature Sensor Circuit",
+      severity: 7,
+      resolved: false,
+    },
+    P0A09: {
+      description: "DC/DC Converter Status Circuit High",
+      severity: 8,
+      resolved: false,
+    },
+  },
+};
+
 app.get("/api/health", function (req, res) {
   res.status(200).json({ status: "ok" });
 });
@@ -59,6 +86,74 @@ app.post("/api/telemetry/:vehicleId", function (req, res) {
   };
   telemetryHistory[vehicleId].push(snapshot);
   res.status(200).json(data);
+});
+
+app.get("/api/faults/severity/:level", function (req, res) {
+  const level = parseInt(req.params.level);
+  const result = {};
+
+  for (const [vehicleId, faults] of Object.entries(faultData)) {
+    const matchingFaults = Object.fromEntries(
+      Object.entries(faults).filter(
+        ([code, fault]) => fault.severity === level,
+      ),
+    );
+    if (Object.keys(matchingFaults).length > 0) {
+      result[vehicleId] = matchingFaults;
+    }
+  }
+
+  res.status(200).json(result);
+});
+
+app.get("/api/faults/:vehicleId", function (req, res) {
+  const vehicleId = req.params.vehicleId;
+  const faults = faultData[vehicleId];
+
+  if (!faults) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const activeFaults = Object.fromEntries(
+    Object.entries(faults).filter(([code, fault]) => !fault.resolved),
+  );
+
+  res.status(200).json(activeFaults);
+});
+
+app.get("/api/faults/:vehicleId/:dtcCode", function (req, res) {
+  const { vehicleId, dtcCode } = req.params;
+  const faults = faultData[vehicleId];
+
+  if (!faults) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const fault = faults[dtcCode];
+
+  if (!fault) {
+    return res.status(404).json({ error: "Fault code not found" });
+  }
+
+  res.status(200).json(fault);
+});
+
+app.put("/api/faults/:vehicleId/:dtcCode/resolve", function (req, res) {
+  const { vehicleId, dtcCode } = req.params;
+  const faults = faultData[vehicleId];
+
+  if (!faults) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const fault = faults[dtcCode];
+
+  if (!fault) {
+    return res.status(404).json({ error: "Fault code not found" });
+  }
+
+  fault.resolved = true;
+  res.status(200).json(fault);
 });
 
 app.get("/api/telemetry/:vehicleId/stream", function (req, res) {
