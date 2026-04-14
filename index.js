@@ -55,6 +55,33 @@ const faultData = {
   },
 };
 
+const scanFaults = {
+  "KA-01-AB-1234": {
+    P0302: {
+      description: "Cylinder 2 misfire detected",
+      severity: 8,
+      resolved: false,
+    },
+    P0171: {
+      description: "System Too Lean (Bank 1)",
+      severity: 7,
+      resolved: false,
+    },
+  },
+  "KA-01-CD-5678": {
+    P0A80: {
+      description: "Replace Hybrid Battery Pack",
+      severity: 9,
+      resolved: false,
+    },
+    P0B00: {
+      description: "Auxiliary Transmission Fluid Pump Motor Control Module",
+      severity: 6,
+      resolved: false,
+    },
+  },
+};
+
 app.get("/api/health", function (req, res) {
   res.status(200).json({ status: "ok" });
 });
@@ -154,6 +181,28 @@ app.put("/api/faults/:vehicleId/:dtcCode/resolve", function (req, res) {
 
   fault.resolved = true;
   res.status(200).json(fault);
+});
+
+app.post("/api/faults/:vehicleId/scan", function (req, res) {
+  const vehicleId = req.params.vehicleId;
+  const faults = faultData[vehicleId];
+  const availableFaults = scanFaults[vehicleId];
+
+  if (!availableFaults) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const keys = Object.keys(availableFaults);
+  const randomCode = keys[Math.floor(Math.random() * keys.length)];
+  const newFault = { ...availableFaults[randomCode] };
+
+  // Add to faultData
+  if (!faults) {
+    faultData[vehicleId] = {};
+  }
+  faultData[vehicleId][randomCode] = newFault;
+
+  res.status(201).json({ code: randomCode, ...newFault });
 });
 
 app.get("/api/telemetry/:vehicleId/stream", function (req, res) {
