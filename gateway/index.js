@@ -26,7 +26,7 @@ app.use(
   "/api/telemetry",
   authCheck,
   createProxyMiddleware({
-    target: "http://host.docker.internal:3001",
+    target: "http://telemetry-service:3001",
     changeOrigin: true,
   }),
 );
@@ -35,7 +35,7 @@ app.use(
   "/api/faults",
   authCheck,
   createProxyMiddleware({
-    target: "http://host.docker.internal:3002",
+    target: "http://fault-service:3002",
     changeOrigin: true,
   }),
 );
@@ -44,7 +44,7 @@ app.use(
   "/api/notifications",
   authCheck,
   createProxyMiddleware({
-    target: "http://host.docker.internal:3003",
+    target: "http://notification-service:3003",
     changeOrigin: true,
   }),
 );
