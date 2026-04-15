@@ -1,0 +1,48 @@
+name: Vehicle Telematics API CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run health check test
+        run: |
+          node index.js &
+          sleep 2
+          curl -f http://localhost:3000/api/health || exit 1
+          kill %1
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build telemetry image
+        run: docker build -t telemetry-service -f services/telemetry-service/Dockerfile .
+
+      - name: Build fault image
+        run: docker build -t fault-service -f services/fault-service/Dockerfile .
+
+      - name: Build notification image
+        run: docker build -t notification-service -f services/notification-service/Dockerfile .
+
+      - name: Build gateway image
+        run: docker build -t gateway-service -f gateway/Dockerfile .
