@@ -30,6 +30,8 @@ const vehicleData = {
     engineLoad: 70,
     fuelLevel: 50,
     afr: 14.7,
+    iat: 35,
+    cmv: 13.8,
   },
   "KA-01-CD-5678": {
     // BEV fields here
@@ -39,6 +41,10 @@ const vehicleData = {
     motorTorque: 150,
     hvPackVoltage: 400,
     motorTemp: 40,
+    soh: 92,
+    regen: 15,
+    aux: 13.5,
+    ins: 1200,
   },
 };
 
