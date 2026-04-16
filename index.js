@@ -2,6 +2,9 @@ const express = require("express");
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 
+const pool = require("./db");
+const initDb = require("./initDb");
+
 const app = express();
 app.use(express.json());
 
@@ -442,26 +445,32 @@ app.post("/api/faults/:vehicleId/scan", function (req, res) {
  *         description: Notification created
  */
 
-app.post("/api/notifications/critical", function (req, res) {
+app.post("/api/notifications/critical", async function (req, res) {
   const { vehicleId, dtcCode, message } = req.body;
+  const severity = 10;
+  const id = Date.now().toString();
+  const timestamp = new Date().toISOString();
 
-  // Get severity from faultData if exists
-  const faults = faultData[vehicleId];
-  const fault = faults && faults[dtcCode];
-  const severity = fault ? fault.severity : 10;
+  try {
+    await pool.query(
+      `INSERT INTO notifications (id, vehicle_id, dtc_code, message, severity, acknowledged, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, vehicleId, dtcCode, message, severity, false, timestamp],
+    );
 
-  const notification = {
-    id: Date.now().toString(), // Simple unique ID
-    vehicleId,
-    dtcCode,
-    message,
-    severity,
-    acknowledged: false,
-    timestamp: new Date().toISOString(),
-  };
-
-  notifications.push(notification);
-  res.status(201).json(notification);
+    res.status(201).json({
+      id,
+      vehicleId,
+      dtcCode,
+      message,
+      severity,
+      acknowledged: false,
+      timestamp,
+    });
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to save notification" });
+  }
 });
 
 /**
@@ -481,12 +490,25 @@ app.post("/api/notifications/critical", function (req, res) {
  *         description: Notifications array returned
  */
 
-app.get("/api/notifications/:vehicleId", function (req, res) {
+app.get("/api/notifications/:vehicleId", async function (req, res) {
   const vehicleId = req.params.vehicleId;
-  const matching = notifications.filter((n) => n.vehicleId === vehicleId);
-  res.status(200).json(matching);
-});
 
+  try {
+    const result = await pool.query(
+      `SELECT id, vehicle_id AS "vehicleId", dtc_code AS "dtcCode", 
+              message, severity, acknowledged, timestamp
+       FROM notifications
+       WHERE vehicle_id = $1
+       ORDER BY timestamp DESC`,
+      [vehicleId],
+    );
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to fetch notifications" });
+  }
+});
 /**
  * @swagger
  * /api/notifications/{id}/acknowledge:
@@ -506,16 +528,28 @@ app.get("/api/notifications/:vehicleId", function (req, res) {
  *         description: Notification not found
  */
 
-app.put("/api/notifications/:id/acknowledge", function (req, res) {
+app.put("/api/notifications/:id/acknowledge", async function (req, res) {
   const id = req.params.id;
-  const notification = notifications.find((n) => n.id === id);
 
-  if (!notification) {
-    return res.status(404).json({ error: "Notification not found" });
+  try {
+    const result = await pool.query(
+      `UPDATE notifications 
+       SET acknowledged = TRUE 
+       WHERE id = $1
+       RETURNING id, vehicle_id AS "vehicleId", dtc_code AS "dtcCode",
+                 message, severity, acknowledged, timestamp`,
+      [id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to acknowledge notification" });
   }
-
-  notification.acknowledged = true;
-  res.status(200).json(notification);
 });
 
 /**
@@ -574,6 +608,7 @@ app.get("/api/telemetry/:vehicleId/stream", function (req, res) {
 });
 
 const PORT = 3000;
-app.listen(PORT, function () {
+app.listen(PORT, async function () {
+  await initDb();
   console.log(`Server is running on port ${PORT}`);
 });
