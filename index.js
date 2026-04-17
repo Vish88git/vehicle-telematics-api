@@ -247,22 +247,35 @@ app.get("/api/telemetry/:vehicleId/history", function (req, res) {
  *         description: Faults matching severity level
  */
 
-app.get("/api/faults/severity/:level", function (req, res) {
+app.get("/api/faults/severity/:level", async function (req, res) {
   const level = parseInt(req.params.level);
-  const result = {};
 
-  for (const [vehicleId, faults] of Object.entries(faultData)) {
-    const matchingFaults = Object.fromEntries(
-      Object.entries(faults).filter(
-        ([code, fault]) => fault.severity === level,
-      ),
+  try {
+    const result = await pool.query(
+      `SELECT vehicle_id AS "vehicleId", dtc_code AS "dtcCode", 
+              description, severity, resolved
+       FROM faults
+       WHERE severity = $1`,
+      [level],
     );
-    if (Object.keys(matchingFaults).length > 0) {
-      result[vehicleId] = matchingFaults;
-    }
-  }
 
-  res.status(200).json(result);
+    const grouped = {};
+    result.rows.forEach((row) => {
+      if (!grouped[row.vehicleId]) {
+        grouped[row.vehicleId] = {};
+      }
+      grouped[row.vehicleId][row.dtcCode] = {
+        description: row.description,
+        severity: row.severity,
+        resolved: row.resolved,
+      };
+    });
+
+    res.status(200).json(grouped);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to fetch faults by severity" });
+  }
 });
 
 /**
@@ -284,21 +297,36 @@ app.get("/api/faults/severity/:level", function (req, res) {
  *         description: Vehicle not found
  */
 
-app.get("/api/faults/:vehicleId", function (req, res) {
+app.get("/api/faults/:vehicleId", async function (req, res) {
   const vehicleId = req.params.vehicleId;
-  const faults = faultData[vehicleId];
 
-  if (!faults) {
-    return res.status(404).json({ error: "Vehicle not found" });
+  try {
+    const result = await pool.query(
+      `SELECT dtc_code AS "dtcCode", description, severity, resolved
+       FROM faults
+       WHERE vehicle_id = $1 AND resolved = FALSE`,
+      [vehicleId],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Vehicle not found" });
+    }
+
+    const faults = {};
+    result.rows.forEach((row) => {
+      faults[row.dtcCode] = {
+        description: row.description,
+        severity: row.severity,
+        resolved: row.resolved,
+      };
+    });
+
+    res.status(200).json(faults);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to fetch faults" });
   }
-
-  const activeFaults = Object.fromEntries(
-    Object.entries(faults).filter(([code, fault]) => !fault.resolved),
-  );
-
-  res.status(200).json(activeFaults);
 });
-
 /**
  * @swagger
  * /api/faults/{vehicleId}/{dtcCode}:
@@ -324,21 +352,26 @@ app.get("/api/faults/:vehicleId", function (req, res) {
  *         description: Vehicle or fault code not found
  */
 
-app.get("/api/faults/:vehicleId/:dtcCode", function (req, res) {
+app.get("/api/faults/:vehicleId/:dtcCode", async function (req, res) {
   const { vehicleId, dtcCode } = req.params;
-  const faults = faultData[vehicleId];
 
-  if (!faults) {
-    return res.status(404).json({ error: "Vehicle not found" });
+  try {
+    const result = await pool.query(
+      `SELECT dtc_code AS "dtcCode", description, severity, resolved
+       FROM faults
+       WHERE vehicle_id = $1 AND dtc_code = $2`,
+      [vehicleId, dtcCode],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Fault code not found" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to fetch fault" });
   }
-
-  const fault = faults[dtcCode];
-
-  if (!fault) {
-    return res.status(404).json({ error: "Fault code not found" });
-  }
-
-  res.status(200).json(fault);
 });
 
 /**
@@ -366,22 +399,27 @@ app.get("/api/faults/:vehicleId/:dtcCode", function (req, res) {
  *         description: Vehicle or fault code not found
  */
 
-app.put("/api/faults/:vehicleId/:dtcCode/resolve", function (req, res) {
+app.put("/api/faults/:vehicleId/:dtcCode/resolve", async function (req, res) {
   const { vehicleId, dtcCode } = req.params;
-  const faults = faultData[vehicleId];
 
-  if (!faults) {
-    return res.status(404).json({ error: "Vehicle not found" });
+  try {
+    const result = await pool.query(
+      `UPDATE faults
+       SET resolved = TRUE
+       WHERE vehicle_id = $1 AND dtc_code = $2
+       RETURNING dtc_code AS "dtcCode", description, severity, resolved`,
+      [vehicleId, dtcCode],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Fault code not found" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to resolve fault" });
   }
-
-  const fault = faults[dtcCode];
-
-  if (!fault) {
-    return res.status(404).json({ error: "Fault code not found" });
-  }
-
-  fault.resolved = true;
-  res.status(200).json(fault);
 });
 
 /**
@@ -409,6 +447,37 @@ app.post("/api/faults/:vehicleId/scan", function (req, res) {
   const availableFaults = scanFaults[vehicleId];
 
   if (!availableFaults) {
+    app.post("/api/faults/:vehicleId/scan", async function (req, res) {
+      const vehicleId = req.params.vehicleId;
+      const availableFaults = scanFaults[vehicleId];
+
+      if (!availableFaults) {
+        return res.status(404).json({ error: "Vehicle not found" });
+      }
+
+      const keys = Object.keys(availableFaults);
+      const randomCode = keys[Math.floor(Math.random() * keys.length)];
+      const newFault = availableFaults[randomCode];
+
+      try {
+        await pool.query(
+          `INSERT INTO faults (vehicle_id, dtc_code, description, severity, resolved)
+       VALUES ($1, $2, $3, $4, FALSE)
+       ON CONFLICT (vehicle_id, dtc_code) DO NOTHING`,
+          [vehicleId, randomCode, newFault.description, newFault.severity],
+        );
+
+        res.status(201).json({
+          code: randomCode,
+          description: newFault.description,
+          severity: newFault.severity,
+          resolved: false,
+        });
+      } catch (error) {
+        console.error("DB error:", error);
+        res.status(500).json({ error: "Failed to save scanned fault" });
+      }
+    });
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
