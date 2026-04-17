@@ -185,7 +185,7 @@ app.get("/api/telemetry/:vehicleId", function (req, res) {
  *         description: Vehicle not found
  */
 
-app.post("/api/telemetry/:vehicleId", function (req, res) {
+app.post("/api/telemetry/:vehicleId", async function (req, res) {
   const vehicleId = req.params.vehicleId;
   const data = vehicleData[vehicleId];
 
@@ -194,11 +194,38 @@ app.post("/api/telemetry/:vehicleId", function (req, res) {
   }
 
   Object.assign(data, req.body);
-  const snapshot = {
-    timestamp: new Date().toISOString(),
-    ...data,
-  };
-  telemetryHistory[vehicleId].push(snapshot);
+
+  try {
+    await pool.query(
+      `INSERT INTO telemetry_history 
+       (vehicle_id, rpm, speed, coolant_temp, engine_load, fuel_level, afr, iat, cmv,
+        soc, soh, battery_pack_temp, motor_torque, hv_pack_voltage, motor_temp, regen, aux, ins)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        vehicleId,
+        data.rpm || null,
+        data.speed || null,
+        data.coolantTemp || null,
+        data.engineLoad || null,
+        data.fuelLevel || null,
+        data.afr || null,
+        data.iat || null,
+        data.cmv || null,
+        data.soc || null,
+        data.soh || null,
+        data.batteryPackTemp || null,
+        data.motorTorque || null,
+        data.hvPackVoltage || null,
+        data.motorTemp || null,
+        data.regen || null,
+        data.aux || null,
+        data.ins || null,
+      ],
+    );
+  } catch (error) {
+    console.error("DB error saving telemetry:", error);
+  }
+
   res.status(200).json(data);
 });
 
@@ -220,14 +247,28 @@ app.post("/api/telemetry/:vehicleId", function (req, res) {
  *       404:
  *         description: Vehicle not found
  */
-app.get("/api/telemetry/:vehicleId/history", function (req, res) {
+app.get("/api/telemetry/:vehicleId/history", async function (req, res) {
   const vehicleId = req.params.vehicleId;
   const data = vehicleData[vehicleId];
 
   if (!data) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
-  res.status(200).json(telemetryHistory[vehicleId]);
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM telemetry_history
+       WHERE vehicle_id = $1
+       ORDER BY timestamp DESC
+       LIMIT 100`,
+      [vehicleId],
+    );
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("DB error:", error);
+    res.status(500).json({ error: "Failed to fetch telemetry history" });
+  }
 });
 
 /**

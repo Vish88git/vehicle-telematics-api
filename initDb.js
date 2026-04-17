@@ -61,6 +61,31 @@ async function initDb() {
       );
     }
     console.log("Faults seeded");
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS telemetry_history (
+        id SERIAL PRIMARY KEY,
+        vehicle_id VARCHAR(20) NOT NULL,
+        timestamp TIMESTAMPTZ DEFAULT NOW(),
+        rpm INTEGER,
+        speed INTEGER,
+        coolant_temp INTEGER,
+        engine_load INTEGER,
+        fuel_level INTEGER,
+        afr DECIMAL,
+        iat INTEGER,
+        cmv DECIMAL,
+        soc INTEGER,
+        soh INTEGER,
+        battery_pack_temp INTEGER,
+        motor_torque INTEGER,
+        hv_pack_voltage INTEGER,
+        motor_temp INTEGER,
+        regen DECIMAL,
+        aux DECIMAL,
+        ins INTEGER
+    )
+`);
+    console.log("Telemetry history table ready");
   } catch (error) {
     console.error("Database initialisation failed:", error);
   }
